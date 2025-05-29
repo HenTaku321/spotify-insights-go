@@ -1,4 +1,4 @@
-module spotify-insights-go
+module github.com/HenTaku321/spotify-insights-go
 
 go 1.24
 
