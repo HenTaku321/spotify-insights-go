@@ -24,8 +24,8 @@ func main() {
 	}
 	defer vc.C.Close()
 
-	sc := spotify.GetClient(&vc, []byte(os.Getenv("SPOTIFY_KEY")))
-	sc.Run(&vc, time.Hour)
+	sc := spotify.GetClient(vc, []byte(os.Getenv("SPOTIFY_KEY")))
+	sc.Run(vc, time.Hour)
 }
 ```
 ### 目前可用的功能(更新中):
