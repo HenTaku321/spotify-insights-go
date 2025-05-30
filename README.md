@@ -10,24 +10,23 @@
 package main
 
 import (
-    "github.com/HenTaku321/spotify-insights-go"
-    "github.com/HenTaku321/valkey-go"
-    "log/slog"
-    "os"
-    "time"
+	"crypto/tls"
+	"github.com/HenTaku321/spotify-insights-go"
+	"github.com/HenTaku321/valkey-go"
+	"os"
+	"time"
 )
 
 func main() {
-	vc, err := valkey.NewClient("127.0.0.1:6379", "", 0, true)
+	vc, err := valkey.NewClient("server:port", os.Getenv("VALKEY_PASSWD"), 0, true, &tls.Config{})
 	if err != nil {
 		panic(err)
 	}
 	defer vc.C.Close()
 
-	sc := spotify.GetClient(vc, []byte(os.Getenv("SPOTIFY_KEY")))
-	sc.Run(vc, time.Hour)
+	sc := spotify.GetClient(&vc, []byte(os.Getenv("SPOTIFY_KEY")))
+	sc.Run(&vc, time.Hour)
 }
-
 ```
 ### 目前可用的功能(更新中):
 ```
