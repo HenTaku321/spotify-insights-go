@@ -15,36 +15,29 @@ type PlayedHistory struct {
 	//EmbedURL string `json:"embed_url"`
 }
 
-func (c *Client) getRecentlyPlayedTracksFromSpotify(dbc dbClient) ([]PlayedTrack, error) {
+func (c *Client) getRecentlyPlayedTracksFromSpotify(dbc dbClient) ([]PlayedHistory, error) {
 	recentlyPlayedTracks, err := c.C.PlayerRecentlyPlayedOpt(c.Ctx, &spotify.RecentlyPlayedOptions{Limit: 50})
 	if err != nil {
 		return nil, err
 	}
 
-	var res []PlayedTrack
+	var res []PlayedHistory
 
-	// recentlyPlayedTracks.Track 是 spotify.SimpleTrack, 要转换成 FullTrack
 	for _, item := range recentlyPlayedTracks {
-		// 在这里就已经把信息存进去了
-		track, err := c.getTrackCache(dbc, string(item.Track.ID))
-		if err != nil {
-			return nil, err
-		}
-
-		res = append(res, PlayedTrack{*track, item.PlayedAt.Local().Format(time.DateTime)})
+		res = append(res, PlayedHistory{item.Track.ID.String(), item.PlayedAt.Local().Format(time.DateTime)})
 	}
 
 	return res, nil
 }
 
-func (c *Client) truncate(dbc dbClient, recentlyPlayedTracks []PlayedTrack) ([]PlayedTrack, error) {
+func (c *Client) truncate(dbc dbClient, playedHistory []PlayedHistory) ([]PlayedHistory, error) {
 	latestPlayed, err := dbc.GetSliceByIndex("played-history", -1)
 	if err != nil {
 		return nil, err
 	}
 
 	if latestPlayed == "" {
-		return recentlyPlayedTracks, nil
+		return playedHistory, nil
 	}
 
 	ph := PlayedHistory{}
@@ -56,13 +49,13 @@ func (c *Client) truncate(dbc dbClient, recentlyPlayedTracks []PlayedTrack) ([]P
 
 	latestPlayedIndex := 0
 
-	for ; latestPlayedIndex < len(recentlyPlayedTracks); latestPlayedIndex++ {
-		if recentlyPlayedTracks[latestPlayedIndex].PlayedAt == ph.PlayedAt {
+	for ; latestPlayedIndex < len(playedHistory); latestPlayedIndex++ {
+		if playedHistory[latestPlayedIndex].PlayedAt == ph.PlayedAt {
 			break
 		}
 	}
 
-	return recentlyPlayedTracks[:latestPlayedIndex], nil
+	return playedHistory[:latestPlayedIndex], nil
 }
 
 // saveRecentlyPlayedTracks 追加最近收听的歌曲并统计每日收听量, 并以 *Map 的 JSON 格式存储信息
@@ -74,20 +67,20 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 		return err
 	}
 
-	truncatedRecentlyPlayedTracks, err := c.truncate(dbc, recentlyPlayedTracks)
+	truncatedPlayedHistory, err := c.truncate(dbc, recentlyPlayedTracks)
 	if err != nil {
 		return err
 	}
 
-	if len(truncatedRecentlyPlayedTracks) == 0 {
+	if len(truncatedPlayedHistory) == 0 {
 		return nil
 	}
 
-	slices.Reverse(truncatedRecentlyPlayedTracks)
+	slices.Reverse(truncatedPlayedHistory)
 
 	var ph []string
 
-	for _, playedTrack := range truncatedRecentlyPlayedTracks {
+	for _, playedTrack := range truncatedPlayedHistory {
 		playedTrackID := playedTrack.ID
 
 		j, err := json.Marshal(&PlayedHistory{playedTrackID, playedTrack.PlayedAt})
@@ -120,7 +113,18 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 		slog.Debug("最近收听的歌曲保存成功", "日期", day, "数量", count)
 	}
 
-	return c.savePlayedCount(dbc, truncatedRecentlyPlayedTracks)
+	var truncatedRecentlyPlayedTrack []PlayedTrack
+
+	for _, played := range truncatedPlayedHistory {
+		track, err := c.getTrackCache(dbc, played.ID)
+		if err != nil {
+			return err
+		}
+
+		truncatedRecentlyPlayedTrack = append(truncatedRecentlyPlayedTrack, PlayedTrack{*track, played.PlayedAt})
+	}
+
+	return c.savePlayedCount(dbc, truncatedRecentlyPlayedTrack)
 }
 
 func (c *Client) GetPlayedHistory(dbc dbClient, start, stop int64) ([]PlayedTrack, error) {
