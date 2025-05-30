@@ -130,7 +130,6 @@ func saveToken(dbc dbClient, token *oauth2.Token, key []byte) error {
 	if err != nil {
 		return fmt.Errorf("存储令牌到数据库失败: %w", err)
 	}
-	slog.Debug("令牌已加密并成功保存")
 	return nil
 }
 
