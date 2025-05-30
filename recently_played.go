@@ -76,6 +76,8 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 		return nil
 	}
 
+	slog.Debug("开始保存播放记录详细信息, 请勿在结束前退出程序")
+
 	slices.Reverse(truncatedPlayedHistory)
 
 	var ph []string
@@ -123,6 +125,7 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 
 		truncatedRecentlyPlayedTrack = append(truncatedRecentlyPlayedTrack, PlayedTrack{*track, played.PlayedAt})
 	}
+	defer slog.Debug("保存播放记录详细信息结束")
 
 	return c.savePlayedCount(dbc, truncatedRecentlyPlayedTrack)
 }
