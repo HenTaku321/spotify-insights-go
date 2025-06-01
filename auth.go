@@ -31,6 +31,7 @@ var (
 		spotifyauth.ScopeUserReadPlaybackState,
 		spotifyauth.ScopeUserModifyPlaybackState,
 		spotifyauth.ScopeUserReadRecentlyPlayed,
+		spotifyauth.ScopeUserLibraryRead,
 		spotifyauth.ScopeUserTopRead,
 		spotifyauth.ScopeStreaming,
 	))
