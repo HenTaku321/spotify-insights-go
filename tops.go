@@ -5,65 +5,60 @@ import (
 	"github.com/zmb3/spotify/v2"
 	"log/slog"
 	"sort"
-	"strconv"
 	"time"
 )
 
-func (c *Client) getTopArtistsFromSpotify(r spotify.Range) ([]Artist, error) {
-	fap, err := c.C.CurrentUsersTopArtists(c.Ctx, spotify.Limit(50), spotify.Timerange(r))
-	if err != nil {
-		return nil, err
-	}
-
-	var res []Artist
-
-	for _, artist := range fap.Artists {
-		res = append(res, *c.convertArtist(&artist))
-	}
-
-	return res, nil
-}
-
 func (c *Client) saveTopArtists(dbc dbClient) error {
-	m, err := dbc.GetMapInt64("updated-times", "monthly-top-artists")
+	m, err := dbc.GetMapStr("updated-times", "monthly-top-artists")
 	if err != nil {
 		return err
 	}
 
-	h, err := dbc.GetMapInt64("updated-times", "half-yearly-top-artists")
+	h, err := dbc.GetMapStr("updated-times", "half-yearly-top-artists")
 	if err != nil {
 		return err
 	}
 
-	y, err := dbc.GetMapInt64("updated-times", "yearly-top-artists")
+	y, err := dbc.GetMapStr("updated-times", "yearly-top-artists")
 	if err != nil {
 		return err
 	}
 
-	// 距离上次更新超过一个月 或 第一次更新
-	if int64(time.Now().Month()) > m || m == 0 {
+	var t time.Time
+
+	if m != "" {
+		t, err = time.Parse(time.DateOnly, m)
+		if err != nil {
+			return err
+		}
+	}
+
+	tn := time.Now()
+	tns := tn.Format(time.DateOnly)
+
+	if int(tn.Month()) > int(t.Month()) || tn.Year() > t.Year() || m == "" {
 		slog.Debug("正在更新 Spotify 艺术家月榜")
 
-		artists, err := c.getTopArtistsFromSpotify(spotify.ShortTermRange)
+		fap, err := c.C.CurrentUsersTopArtists(c.Ctx, spotify.Limit(50), spotify.Timerange(spotify.ShortTermRange))
 		if err != nil {
 			return err
 		}
 
 		var res []string
 
-		for _, artist := range artists {
-			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", artist.ID)
+		for _, artist := range fap.Artists {
+			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", artist.ID.String())
 			if err != nil {
 				return err
 			}
 
 			if !exists {
-				err = saveID(dbc, artist.ID, artist.toMap())
+				err = saveID(dbc, artist.ID.String(), c.convertArtist(&artist).toMap())
 				if err != nil {
 					return err
 				}
 			}
-			res = append(res, artist.ID)
+			res = append(res, artist.ID.String())
 		}
 
 		j, err := json.Marshal(res)
@@ -71,12 +66,12 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 			return err
 		}
 
-		err = dbc.SetMap("monthly-top-artists", strconv.Itoa(int(time.Now().Month())), string(j))
+		err = dbc.SetMap("monthly-top-artists", tns, string(j))
 		if err != nil {
 			return err
 		}
 
-		err = dbc.SetMap("updated-times", "monthly-top-artists", strconv.Itoa(int(time.Now().Month())))
+		err = dbc.SetMap("updated-times", "monthly-top-artists", tns)
 		if err != nil {
 			return err
 		}
@@ -84,29 +79,36 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 		slog.Debug("Spotify 艺术家月榜更新成功")
 	}
 
-	if int64(time.Now().Month())-h >= 6 || h == 0 {
+	if h != "" {
+		t, err = time.Parse(time.DateOnly, h)
+		if err != nil {
+			return err
+		}
+	}
+
+	if int(tn.Month()) > int(t.Month()) || tn.Year() > t.Year() || h == "" {
 		slog.Debug("正在更新 Spotify 艺术家半年榜")
 
-		artists, err := c.getTopArtistsFromSpotify(spotify.MediumTermRange)
+		fap, err := c.C.CurrentUsersTopArtists(c.Ctx, spotify.Limit(50), spotify.Timerange(spotify.MediumTermRange))
 		if err != nil {
 			return err
 		}
 
 		var res []string
 
-		for _, artist := range artists {
-			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", artist.ID)
+		for _, artist := range fap.Artists {
+			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", artist.ID.String())
 			if err != nil {
 				return err
 			}
 
 			if !exists {
-				err = saveID(dbc, artist.ID, artist.toMap())
+				err = saveID(dbc, artist.ID.String(), c.convertArtist(&artist).toMap())
 				if err != nil {
 					return err
 				}
 			}
-			res = append(res, artist.ID)
+			res = append(res, artist.ID.String())
 		}
 
 		j, err := json.Marshal(res)
@@ -114,12 +116,12 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 			return err
 		}
 
-		err = dbc.SetMap("half-yearly-top-artists", strconv.Itoa(int(time.Now().Month())), string(j))
+		err = dbc.SetMap("half-yearly-top-artists", tns, string(j))
 		if err != nil {
 			return err
 		}
 
-		err = dbc.SetMap("updated-times", "half-yearly-top-artists", strconv.Itoa(int(time.Now().Month())))
+		err = dbc.SetMap("updated-times", "half-yearly-top-artists", tns)
 		if err != nil {
 			return err
 		}
@@ -127,29 +129,36 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 		slog.Debug("Spotify 艺术家半年榜更新成功")
 	}
 
-	if int64(time.Now().Year())-y >= 1 || h == 0 {
+	if y != "" {
+		t, err = time.Parse(time.DateOnly, y)
+		if err != nil {
+			return err
+		}
+	}
+
+	if int(tn.Month()) > int(t.Month()) || tn.Year() > t.Year() || y == "" {
 		slog.Debug("正在更新 Spotify 艺术家年榜")
 
-		artists, err := c.getTopArtistsFromSpotify(spotify.LongTermRange)
+		fap, err := c.C.CurrentUsersTopArtists(c.Ctx, spotify.Limit(50), spotify.Timerange(spotify.LongTermRange))
 		if err != nil {
 			return err
 		}
 
 		var res []string
 
-		for _, artist := range artists {
-			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", artist.ID)
+		for _, artist := range fap.Artists {
+			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", artist.ID.String())
 			if err != nil {
 				return err
 			}
 
 			if !exists {
-				err = saveID(dbc, artist.ID, artist.toMap())
+				err = saveID(dbc, artist.ID.String(), c.convertArtist(&artist).toMap())
 				if err != nil {
 					return err
 				}
 			}
-			res = append(res, artist.ID)
+			res = append(res, artist.ID.String())
 		}
 
 		j, err := json.Marshal(res)
@@ -157,12 +166,12 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 			return err
 		}
 
-		err = dbc.SetMap("yearly-top-artists", strconv.Itoa(time.Now().Year()), string(j))
+		err = dbc.SetMap("yearly-top-artists", tns, string(j))
 		if err != nil {
 			return err
 		}
 
-		err = dbc.SetMap("updated-times", "yearly-top-artists", strconv.Itoa(time.Now().Year()))
+		err = dbc.SetMap("updated-times", "yearly-top-artists", tns)
 		if err != nil {
 			return err
 		}
@@ -173,65 +182,63 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 	return nil
 }
 
-func (c *Client) getTopTracksFromSpotify(dbc dbClient, r spotify.Range) ([]Track, error) {
-	ftp, err := c.C.CurrentUsersTopTracks(c.Ctx, spotify.Limit(50), spotify.Timerange(r))
-	if err != nil {
-		return nil, err
-	}
-
-	var res []Track
-
-	for _, track := range ftp.Tracks {
-		convertedTrack, err := c.convertTrack(dbc, &track)
-		if err != nil {
-			return nil, err
-		}
-
-		res = append(res, *convertedTrack)
-	}
-
-	return res, nil
-}
-
 func (c *Client) saveTopTracks(dbc dbClient) error {
-	m, err := dbc.GetMapInt64("updated-times", "monthly-top-tracks")
+	m, err := dbc.GetMapStr("updated-times", "monthly-top-tracks")
 	if err != nil {
 		return err
 	}
 
-	h, err := dbc.GetMapInt64("updated-times", "half-yearly-top-tracks")
+	h, err := dbc.GetMapStr("updated-times", "half-yearly-top-tracks")
 	if err != nil {
 		return err
 	}
 
-	y, err := dbc.GetMapInt64("updated-times", "yearly-top-tracks")
+	y, err := dbc.GetMapStr("updated-times", "yearly-top-tracks")
 	if err != nil {
 		return err
 	}
 
-	if int64(time.Now().Month()) > m || m == 0 {
+	var t time.Time
+
+	tn := time.Now()
+	tns := tn.Format(time.DateOnly)
+
+	if m != "" {
+		t, err = time.Parse(time.DateOnly, m)
+		if err != nil {
+			return err
+		}
+	}
+
+	if int(tn.Month()) > int(t.Month()) || tn.Year() > t.Year() || m == "" {
 		slog.Debug("正在更新 Spotify 曲目月榜")
 
-		tracks, err := c.getTopTracksFromSpotify(dbc, spotify.ShortTermRange)
+		ftp, err := c.C.CurrentUsersTopTracks(c.Ctx, spotify.Limit(50), spotify.Timerange(spotify.ShortTermRange))
 		if err != nil {
 			return err
 		}
 
 		var res []string
 
-		for _, track := range tracks {
-			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", track.ID)
+		for _, track := range ftp.Tracks {
+			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", track.ID.String())
 			if err != nil {
 				return err
 			}
 
 			if !exists {
-				err = saveID(dbc, track.ID, track.toMap())
+				converted, err := c.convertTrack(dbc, &track)
+				if err != nil {
+					return err
+				}
+
+				err = saveID(dbc, track.ID.String(), converted.toMap())
 				if err != nil {
 					return err
 				}
 			}
-			res = append(res, track.ID)
+
+			res = append(res, track.ID.String())
 		}
 
 		j, err := json.Marshal(res)
@@ -239,12 +246,12 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 			return err
 		}
 
-		err = dbc.SetMap("monthly-top-tracks", strconv.Itoa(int(time.Now().Month())), string(j))
+		err = dbc.SetMap("monthly-top-tracks", tns, string(j))
 		if err != nil {
 			return err
 		}
 
-		err = dbc.SetMap("updated-times", "monthly-top-tracks", strconv.Itoa(int(time.Now().Month())))
+		err = dbc.SetMap("updated-times", "monthly-top-tracks", tns)
 		if err != nil {
 			return err
 		}
@@ -252,29 +259,42 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 		slog.Debug("Spotify 曲目月榜更新成功")
 	}
 
-	if int64(time.Now().Month())-h >= 6 || h == 0 {
+	if h != "" {
+		t, err = time.Parse(time.DateOnly, h)
+		if err != nil {
+			return err
+		}
+	}
+
+	if int(tn.Month()) > int(t.Month()) || tn.Year() > t.Year() || h == "" {
 		slog.Debug("正在更新 Spotify 曲目半年榜")
 
-		tracks, err := c.getTopTracksFromSpotify(dbc, spotify.MediumTermRange)
+		ftp, err := c.C.CurrentUsersTopTracks(c.Ctx, spotify.Limit(50), spotify.Timerange(spotify.MediumTermRange))
 		if err != nil {
 			return err
 		}
 
 		var res []string
 
-		for _, track := range tracks {
-			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", track.ID)
+		for _, track := range ftp.Tracks {
+			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", track.ID.String())
 			if err != nil {
 				return err
 			}
 
 			if !exists {
-				err = saveID(dbc, track.ID, track.toMap())
+				converted, err := c.convertTrack(dbc, &track)
+				if err != nil {
+					return err
+				}
+
+				err = saveID(dbc, track.ID.String(), converted.toMap())
 				if err != nil {
 					return err
 				}
 			}
-			res = append(res, track.ID)
+
+			res = append(res, track.ID.String())
 		}
 
 		j, err := json.Marshal(res)
@@ -282,12 +302,12 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 			return err
 		}
 
-		err = dbc.SetMap("half-yearly-top-tracks", strconv.Itoa(int(time.Now().Month())), string(j))
+		err = dbc.SetMap("half-yearly-top-tracks", tns, string(j))
 		if err != nil {
 			return err
 		}
 
-		err = dbc.SetMap("updated-times", "half-yearly-top-tracks", strconv.Itoa(int(time.Now().Month())))
+		err = dbc.SetMap("updated-times", "half-yearly-top-tracks", tns)
 		if err != nil {
 			return err
 		}
@@ -295,29 +315,42 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 		slog.Debug("Spotify 曲目半年榜更新成功")
 	}
 
-	if int64(time.Now().Year())-y >= 1 || h == 0 {
+	if y != "" {
+		t, err = time.Parse(time.DateOnly, y)
+		if err != nil {
+			return err
+		}
+	}
+
+	if int(tn.Month()) > int(t.Month()) || tn.Year() > t.Year() || y == "" {
 		slog.Debug("正在更新 Spotify 曲目年榜")
 
-		tracks, err := c.getTopTracksFromSpotify(dbc, spotify.LongTermRange)
+		ftp, err := c.C.CurrentUsersTopTracks(c.Ctx, spotify.Limit(50), spotify.Timerange(spotify.LongTermRange))
 		if err != nil {
 			return err
 		}
 
 		var res []string
 
-		for _, track := range tracks {
-			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", track.ID)
+		for _, track := range ftp.Tracks {
+			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", track.ID.String())
 			if err != nil {
 				return err
 			}
 
 			if !exists {
-				err = saveID(dbc, track.ID, track.toMap())
+				converted, err := c.convertTrack(dbc, &track)
+				if err != nil {
+					return err
+				}
+
+				err = saveID(dbc, track.ID.String(), converted.toMap())
 				if err != nil {
 					return err
 				}
 			}
-			res = append(res, track.ID)
+
+			res = append(res, track.ID.String())
 		}
 
 		j, err := json.Marshal(res)
@@ -325,12 +358,12 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 			return err
 		}
 
-		err = dbc.SetMap("yearly-top-tracks", strconv.Itoa(time.Now().Year()), string(j))
+		err = dbc.SetMap("yearly-top-tracks", tns, string(j))
 		if err != nil {
 			return err
 		}
 
-		err = dbc.SetMap("updated-times", "yearly-top-tracks", strconv.Itoa(time.Now().Year()))
+		err = dbc.SetMap("updated-times", "yearly-top-tracks", tns)
 		if err != nil {
 			return err
 		}
