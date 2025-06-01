@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// PlayedHistory 是 Valkey 列表 played-history中 的存储格式
+// PlayedHistory 是数据库列表 played-history中 的存储格式
 type PlayedHistory struct {
 	ID       string `json:"id"`
 	PlayedAt string `json:"played_at"`
@@ -76,7 +76,7 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 		return nil
 	}
 
-	slog.Debug("开始保存播放记录详细信息, 请勿在结束前退出程序")
+	slog.Info("开始保存播放记录详细信息, 请勿在结束前退出程序")
 
 	slices.Reverse(truncatedPlayedHistory)
 
@@ -125,7 +125,7 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 
 		truncatedRecentlyPlayedTrack = append(truncatedRecentlyPlayedTrack, PlayedTrack{*track, played.PlayedAt})
 	}
-	defer slog.Debug("保存播放记录详细信息结束")
+	defer slog.Info("保存播放记录详细信息结束")
 
 	return c.savePlayedCount(dbc, truncatedRecentlyPlayedTrack)
 }
