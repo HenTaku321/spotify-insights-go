@@ -5,8 +5,11 @@ import (
 	"github.com/zmb3/spotify/v2"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 )
+
+// TODO: DailyTrack, Album
 
 func (c *Client) saveTopArtists(dbc dbClient) error {
 	m, err := dbc.GetMapStr("updated-times", "monthly-top-artists")
@@ -182,6 +185,48 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 	return nil
 }
 
+func (c *Client) replace(dbc dbClient, track spotify.FullTrack, timeNow time.Time, timeDuration time.Time) (*Track, error) {
+	searchResults, err := c.C.Search(c.Ctx, "artist:"+track.Artists[0].Name+" track:"+track.Name, spotify.SearchTypeTrack)
+	if err != nil {
+		return nil, err
+	}
+
+	var correctSearchResults []spotify.FullTrack
+
+	for _, searchResult := range searchResults.Tracks.Tracks {
+		if strings.HasPrefix(track.Name, searchResult.Name) && searchResult.Artists[0].ID.String() == track.Artists[0].ID.String() || strings.HasPrefix(searchResult.Name, track.Name) && searchResult.Artists[0].ID.String() == track.Artists[0].ID.String() {
+			correctSearchResults = append(correctSearchResults, searchResult)
+		}
+	}
+
+	tops, err := c.GetTopTracksIDs(dbc, timeDuration, timeNow, 50)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, top := range tops {
+		for _, correctSearchResult := range correctSearchResults {
+			if top.ID == correctSearchResult.ID.String() {
+				return c.getTrackCache(dbc, top.ID)
+			}
+		}
+	}
+
+	// 按照是否点赞补救
+	for _, correctSearchResult := range correctSearchResults {
+		saved2, err := c.C.UserHasTracks(c.Ctx, correctSearchResult.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		if saved2[0] {
+			return c.convertTrack(dbc, &correctSearchResult)
+		}
+	}
+
+	return nil, nil
+}
+
 func (c *Client) saveTopTracks(dbc dbClient) error {
 	m, err := dbc.GetMapStr("updated-times", "monthly-top-tracks")
 	if err != nil {
@@ -238,7 +283,30 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 				}
 			}
 
-			res = append(res, track.ID.String())
+			// Spotify 的一个 Bug: 有的曲目会被重置版混音版的同名曲目顶替, 排行榜上统计会混淆
+			saved, err := c.C.UserHasTracks(c.Ctx, track.ID)
+			if err != nil {
+				return err
+			}
+
+			if !saved[0] {
+				slog.Info("此歌曲未点赞, 可能是 Spotify 的 Bug, 进行补救", "名称", track.Name, "ID", track.ID, "艺术家", track.Artists[0].Name)
+
+				replacedTrack, err := c.replace(dbc, track, tn, tn.AddDate(0, -1, 0))
+				if err != nil {
+					return err
+				}
+
+				if replacedTrack != nil {
+					slog.Info("补救成功, 替换为", "名称", replacedTrack.Name, "ID", replacedTrack.ID, "艺术家", replacedTrack.Artists[0].Name)
+					res = append(res, replacedTrack.ID)
+				} else {
+					slog.Info("补救失败, 未替换")
+				}
+
+			} else {
+				res = append(res, track.ID.String())
+			}
 		}
 
 		j, err := json.Marshal(res)
@@ -294,7 +362,30 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 				}
 			}
 
-			res = append(res, track.ID.String())
+			saved, err := c.C.UserHasTracks(c.Ctx, track.ID)
+			if err != nil {
+				return err
+			}
+
+			if !saved[0] {
+				slog.Info("此歌曲未点赞, 可能是 Spotify 的 Bug, 进行补救", "名称", track.Name, "ID", track.ID, "艺术家", track.Artists[0].Name)
+
+				replacedTrack, err := c.replace(dbc, track, tn, tn.AddDate(0, -6, 0))
+				if err != nil {
+					return err
+				}
+
+				if replacedTrack != nil {
+					slog.Info("补救成功, 替换为", "名称", replacedTrack.Name, "ID", replacedTrack.ID, "艺术家", replacedTrack.Artists[0].Name)
+					res = append(res, replacedTrack.ID)
+				} else {
+					slog.Info("补救失败, 未替换")
+				}
+
+			} else {
+				res = append(res, track.ID.String())
+			}
+
 		}
 
 		j, err := json.Marshal(res)
@@ -350,7 +441,30 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 				}
 			}
 
-			res = append(res, track.ID.String())
+			saved, err := c.C.UserHasTracks(c.Ctx, track.ID)
+			if err != nil {
+				return err
+			}
+
+			if !saved[0] {
+				slog.Info("此歌曲未点赞, 可能是 Spotify 的 Bug, 进行补救", "名称", track.Name, "ID", track.ID, "艺术家", track.Artists[0].Name)
+
+				replacedTrack, err := c.replace(dbc, track, tn, tn.AddDate(-1, 0, 0))
+				if err != nil {
+					return err
+				}
+
+				if replacedTrack != nil {
+					slog.Info("补救成功, 替换为", "名称", replacedTrack.Name, "ID", replacedTrack.ID, "艺术家", replacedTrack.Artists[0].Name)
+					res = append(res, replacedTrack.ID)
+				} else {
+					slog.Info("补救失败, 未替换")
+				}
+
+			} else {
+				res = append(res, track.ID.String())
+			}
+
 		}
 
 		j, err := json.Marshal(res)
