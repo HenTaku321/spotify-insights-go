@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"github.com/zmb3/spotify/v2"
 	"log/slog"
-	"strings"
 	"time"
 )
 
@@ -93,8 +92,10 @@ type PlayedTrack struct {
 	//EmbedURL string      `json:"embed_url"`
 }
 
-// Run 运行所有定时任务, 阻塞, 若不清楚参数, 推荐设置为1小时
-func (c *Client) Run(dbc dbClient, recentlyPlayedDuration time.Duration) {
+func (c *Client) runGroupShort(dbc dbClient, timeNow time.Time) {
+	slog.Info("开始保存播放记录详细信息, 请勿在结束前退出程序")
+	defer slog.Info("保存播放记录以及其它信息结束")
+
 	err := c.saveRecentlyPlayedTracks(dbc)
 	for err != nil {
 		slog.Warn("Spotify 获取或存储最近播放失败, 一分钟后重试", "error", err)
@@ -102,7 +103,17 @@ func (c *Client) Run(dbc dbClient, recentlyPlayedDuration time.Duration) {
 		err = c.saveRecentlyPlayedTracks(dbc)
 	}
 
-	err = c.saveTopArtists(dbc)
+	err = c.saveHourlyPlayedCount(dbc, timeNow)
+	for err != nil {
+		slog.Warn("Spotify 存储每小时收听量失败, 一分钟后重试", "error", err)
+		time.Sleep(time.Minute)
+		err = c.saveHourlyPlayedCount(dbc, timeNow)
+	}
+
+}
+
+func (c *Client) runGroupLong(dbc dbClient) {
+	err := c.saveTopArtists(dbc)
 	for err != nil {
 		slog.Warn("Spotify 获取或存储热门艺术家失败, 一分钟后重试", "error", err)
 		time.Sleep(time.Minute)
@@ -115,36 +126,27 @@ func (c *Client) Run(dbc dbClient, recentlyPlayedDuration time.Duration) {
 		time.Sleep(time.Minute)
 		err = c.saveTopTracks(dbc)
 	}
+}
+
+// Run 运行所有定时任务, 阻塞, 若不清楚参数则推荐设置为 time.Hour
+func (c *Client) Run(dbc dbClient, recentlyPlayedDuration time.Duration) {
+	c.runGroupShort(dbc, time.Now())
+	c.runGroupLong(dbc)
 
 	recentlyPlayedTicker := time.NewTicker(recentlyPlayedDuration)
 	defer recentlyPlayedTicker.Stop()
 
-	for range recentlyPlayedTicker.C {
-		err = c.saveRecentlyPlayedTracks(dbc)
-		for err != nil {
-			slog.Warn("Spotify 获取或存储最近播放失败, 一分钟后重试", "error", err)
-			err = c.saveRecentlyPlayedTracks(dbc)
-			time.Sleep(time.Minute)
+	go func() {
+		for range recentlyPlayedTicker.C {
+			c.runGroupShort(dbc, time.Now())
 		}
-	}
+	}()
 
 	topsTicker := time.NewTicker(time.Hour * 24)
 	defer topsTicker.Stop()
 
 	for range topsTicker.C {
-		err = c.saveTopArtists(dbc)
-		for err != nil {
-			slog.Warn("Spotify 获取或存储热门艺术家失败, 一分钟后重试", "error", err)
-			time.Sleep(time.Minute)
-			err = c.saveTopArtists(dbc)
-		}
-
-		err = c.saveTopTracks(dbc)
-		for err != nil {
-			slog.Warn("Spotify 获取或存储热门曲目失败, 一分钟后重试", "error", err)
-			time.Sleep(time.Minute)
-			err = c.saveTopTracks(dbc)
-		}
+		c.runGroupLong(dbc)
 	}
 }
 
@@ -244,15 +246,3 @@ func (c *Client) convertTrack(dbc dbClient, track *spotify.FullTrack) (*Track, e
 }
 
 var garbageWords = []string{"remastered", "remaster", "remix", "reissue"}
-
-func removeGarbageWords(title string) string {
-	var res string
-
-	if strings.Contains(title, "-") {
-
-	} else if strings.Contains(title, " - ") {
-
-	}
-
-	return res
-}
