@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"encoding/json"
+	"log/slog"
 	"strconv"
 	"time"
 )
@@ -16,7 +17,7 @@ func (c *Client) GetTotalPlayedCount(dbc dbClient) (int64, error) {
 }
 
 // getTotalPlayedCountInAType 获取一段时间内一个类型的收听量, 若其中一个日期没有数据会返回 nil
-//func (c *Client) getTotalPlayedCountInAType(valkeyClient *valkey.Client, t1, t2 time.Time) (int64, error) {
+//func (c *Client) getTotalPlayedCountInAType(dbc dbClient, t1, t2 time.Time) (int64, error) {
 //
 //}
 
@@ -130,6 +131,79 @@ func (c *Client) savePlayedCount(dbc dbClient, tracks []PlayedTrack) error {
 			}
 		}
 	}
+	return nil
+}
+
+// saveHourlyPlayedCount TODO: 算法需要增强
+// saveHourlyPlayedCount 存储每小时的收听量, 在 saveRecentlyPlayedTracks 后调用
+func (c *Client) saveHourlyPlayedCount(dbc dbClient, timeNow time.Time) error {
+	lastSavedPlayedTimeStr, err := dbc.GetMapStr("hourly-played-count", "last-saved-played-time")
+	if err != nil {
+		return err
+	}
+
+	var lastSavedPlayedTime time.Time
+	if lastSavedPlayedTimeStr != "" {
+		lastSavedPlayedTime, err = time.Parse(time.DateTime, lastSavedPlayedTimeStr)
+		if err != nil {
+			return err
+		}
+	}
+
+	count, err := dbc.GetMapInt64("hourly-played-count", strconv.Itoa(timeNow.Hour()))
+	if err != nil {
+		return err
+	}
+
+	playedTracks, err := dbc.GetSlice("played-history", -50, -1)
+	if err != nil {
+		return err
+	}
+
+	playedTimeStr := ""
+	for _, item := range playedTracks {
+		// 年月日部分
+		playedTimeStr = item[len(item)-21 : len(item)-2]
+
+		playedTime, err := time.Parse(time.DateTime, playedTimeStr)
+		if err != nil {
+			return err
+		}
+
+		if playedTime.Hour() == timeNow.Hour() && playedTime.After(lastSavedPlayedTime.Add(time.Second)) {
+			count++
+		}
+	}
+
+	err = dbc.SetMap("hourly-played-count", "last-saved-played-time", playedTimeStr)
+	if err != nil {
+		return err
+	}
+
+	err = dbc.SetMap("hourly-played-count", strconv.Itoa(timeNow.Hour()), strconv.Itoa(int(count)))
+	if err != nil {
+		return err
+	}
+
+	if lastSavedPlayedTimeStr != playedTimeStr {
+		slog.Debug("每小时收听量保存成功", "当前小时总共", count)
+	}
 
 	return nil
+}
+
+// GetHourlyPlayedCount 返回每个小时的收听量
+func (c *Client) GetHourlyPlayedCount(dbc dbClient) (map[int]int, error) {
+	res := map[int]int{}
+
+	for t := 0; t <= 24; t++ {
+		count, err := dbc.GetMapInt64("hourly-played-count", strconv.Itoa(t))
+		if err != nil {
+			return nil, err
+		}
+
+		res[t] = int(count)
+	}
+
+	return res, nil
 }
