@@ -2,20 +2,21 @@ package spotify
 
 import (
 	"encoding/json"
-	"github.com/zmb3/spotify/v2"
 	"log/slog"
 	"slices"
 	"time"
+
+	"github.com/zmb3/spotify/v2"
 )
 
 // PlayedHistory 是数据库列表 played-history中 的存储格式
 type PlayedHistory struct {
 	ID       string `json:"id"`
 	PlayedAt string `json:"played_at"`
-	//EmbedURL string `json:"embed_url"`
+	// EmbedURL string `json:"embed_url"`
 }
 
-func (c *Client) getRecentlyPlayedTracksFromSpotify(dbc dbClient) ([]PlayedHistory, error) {
+func (c *Client) getRecentlyPlayedTracksFromSpotify() ([]PlayedHistory, error) {
 	recentlyPlayedTracks, err := c.C.PlayerRecentlyPlayedOpt(c.Ctx, &spotify.RecentlyPlayedOptions{Limit: 50})
 	if err != nil {
 		return nil, err
@@ -62,7 +63,7 @@ func (c *Client) truncate(dbc dbClient, playedHistory []PlayedHistory) ([]Played
 func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 	days := map[string]int{}
 
-	recentlyPlayedTracks, err := c.getRecentlyPlayedTracksFromSpotify(dbc)
+	recentlyPlayedTracks, err := c.getRecentlyPlayedTracksFromSpotify()
 	if err != nil {
 		return err
 	}
@@ -75,8 +76,6 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 	if len(truncatedPlayedHistory) == 0 {
 		return nil
 	}
-
-	slog.Info("开始保存播放记录详细信息, 请勿在结束前退出程序")
 
 	slices.Reverse(truncatedPlayedHistory)
 
@@ -125,7 +124,6 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 
 		truncatedRecentlyPlayedTrack = append(truncatedRecentlyPlayedTrack, PlayedTrack{*track, played.PlayedAt})
 	}
-	defer slog.Info("保存播放记录详细信息结束")
 
 	return c.savePlayedCount(dbc, truncatedRecentlyPlayedTrack)
 }
