@@ -11,15 +11,21 @@ package main
 
 import (
 	"crypto/tls"
-	"github.com/HenTaku321/spotify-insights-go"
-	"github.com/HenTaku321/valkey-go"
+	"log/slog"
 	"os"
 	"time"
+
+	"github.com/HenTaku321/spotify-insights-go"
+	"github.com/HenTaku321/valkey-go"
 )
 
 func main() {
-	vc, err := valkey.NewClient("server:port", os.Getenv("VALKEY_PASSWD"), 0, true, &tls.Config{})
+	vPasswd := os.Getenv("VALKEY_PASSWD")
+	vc, err := valkey.NewClient("valkey.customdom.eu.org:6379", vPasswd, 0, true, &tls.Config{})
 	if err != nil {
+		if vPasswd == "" {
+			defer slog.Info("程序退出, 但与服务器的连接可能未被关闭") // 
+		}
 		panic(err)
 	}
 	defer vc.C.Close()
@@ -27,6 +33,7 @@ func main() {
 	sc := spotify.GetClient(vc, []byte(os.Getenv("SPOTIFY_KEY")))
 	sc.Run(vc, time.Hour)
 }
+
 ```
 ### 目前可用的功能(更新中):
 ```
@@ -42,4 +49,5 @@ GetPlayedHistoryIDByIndex
 GetCurrentlyPlayingTrack
 GetPlayedRangeOnADay
 GetTotalPlayedCount
+GetHourlyPlayedCount
 ```
