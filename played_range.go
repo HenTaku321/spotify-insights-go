@@ -135,8 +135,8 @@ func (c *Client) savePlayedCount(dbc dbClient, tracks []PlayedTrack) error {
 }
 
 // saveHourlyPlayedCount TODO: 算法需要增强
-// saveHourlyPlayedCount 存储每小时的收听量, 在 saveRecentlyPlayedTracks 后调用
-func (c *Client) saveHourlyPlayedCount(dbc dbClient, timeNow time.Time) error {
+// saveHourlyPlayedCount 存储每小时的收听量
+func (c *Client) saveHourlyPlayedCount(dbc dbClient) error {
 	lastSavedPlayedTimeStr, err := dbc.GetMapStr("hourly-played-count", "last-saved-played-time")
 	if err != nil {
 		return err
@@ -150,12 +150,7 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient, timeNow time.Time) error {
 		}
 	}
 
-	count, err := dbc.GetMapInt64("hourly-played-count", strconv.Itoa(timeNow.Hour()))
-	if err != nil {
-		return err
-	}
-
-	counts := map[int]int{timeNow.Hour(): int(count)}
+	counts := map[int]int{}
 
 	playedTracks, err := dbc.GetSlice("played-history", -50, -1)
 	if err != nil {
@@ -184,13 +179,19 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient, timeNow time.Time) error {
 	}
 
 	for hour, count := range counts {
-		err = dbc.SetMap("hourly-played-count", strconv.Itoa(hour), strconv.Itoa(count))
+		count2, err := dbc.GetMapInt64("hourly-played-count", strconv.Itoa(hour))
+		if err != nil {
+			return err
+		}
+
+		total := count + int(count2)
+		err = dbc.SetMap("hourly-played-count", strconv.Itoa(hour), strconv.Itoa(total))
 		if err != nil {
 			return err
 		}
 
 		if count > 0 {
-			slog.Debug("每小时收听量保存成功", "小时", hour, "数量", count)
+			slog.Debug("每小时收听量保存成功", "小时", hour, "数量", count, "总共", total)
 		}
 	}
 
