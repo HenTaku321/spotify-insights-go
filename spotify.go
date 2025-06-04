@@ -92,9 +92,9 @@ type PlayedTrack struct {
 	//EmbedURL string      `json:"embed_url"`
 }
 
-func (c *Client) runGroupShort(dbc dbClient, timeNow time.Time) {
-	slog.Info("开始保存播放记录详细信息, 请勿在结束前退出程序")
-	defer slog.Info("保存播放记录以及其它信息结束")
+func (c *Client) runGroupShort(dbc dbClient) {
+	slog.Info("开始保存播放记录与其它信息, 请勿在结束前退出程序")
+	defer slog.Info("保存播放记录与其它信息结束")
 
 	err := c.saveRecentlyPlayedTracks(dbc)
 	for err != nil {
@@ -103,11 +103,11 @@ func (c *Client) runGroupShort(dbc dbClient, timeNow time.Time) {
 		err = c.saveRecentlyPlayedTracks(dbc)
 	}
 
-	err = c.saveHourlyPlayedCount(dbc, timeNow)
+	err = c.saveHourlyPlayedCount(dbc)
 	for err != nil {
 		slog.Warn("Spotify 存储每小时收听量失败, 一分钟后重试", "error", err)
 		time.Sleep(time.Minute)
-		err = c.saveHourlyPlayedCount(dbc, timeNow)
+		err = c.saveHourlyPlayedCount(dbc)
 	}
 
 }
@@ -130,7 +130,7 @@ func (c *Client) runGroupLong(dbc dbClient) {
 
 // Run 运行所有定时任务, 阻塞, 若不清楚参数则推荐设置为 time.Hour
 func (c *Client) Run(dbc dbClient, recentlyPlayedDuration time.Duration) {
-	c.runGroupShort(dbc, time.Now())
+	c.runGroupShort(dbc)
 	c.runGroupLong(dbc)
 
 	recentlyPlayedTicker := time.NewTicker(recentlyPlayedDuration)
@@ -138,7 +138,7 @@ func (c *Client) Run(dbc dbClient, recentlyPlayedDuration time.Duration) {
 
 	go func() {
 		for range recentlyPlayedTicker.C {
-			c.runGroupShort(dbc, time.Now())
+			c.runGroupShort(dbc)
 		}
 	}()
 
