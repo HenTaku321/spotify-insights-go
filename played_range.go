@@ -155,11 +155,14 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient, timeNow time.Time) error {
 		return err
 	}
 
+	counts := map[int]int{timeNow.Hour(): int(count)}
+
 	playedTracks, err := dbc.GetSlice("played-history", -50, -1)
 	if err != nil {
 		return err
 	}
 
+	// 最后会用来当作此次最后保存的时间
 	playedTimeStr := ""
 	for _, item := range playedTracks {
 		// 年月日部分
@@ -170,8 +173,8 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient, timeNow time.Time) error {
 			return err
 		}
 
-		if playedTime.Hour() == timeNow.Hour() && playedTime.After(lastSavedPlayedTime.Add(time.Second)) {
-			count++
+		if playedTime.After(lastSavedPlayedTime.Add(time.Second)) {
+			counts[playedTime.Hour()]++
 		}
 	}
 
@@ -180,13 +183,15 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient, timeNow time.Time) error {
 		return err
 	}
 
-	err = dbc.SetMap("hourly-played-count", strconv.Itoa(timeNow.Hour()), strconv.Itoa(int(count)))
-	if err != nil {
-		return err
-	}
+	for hour, count := range counts {
+		err = dbc.SetMap("hourly-played-count", strconv.Itoa(hour), strconv.Itoa(count))
+		if err != nil {
+			return err
+		}
 
-	if lastSavedPlayedTimeStr != playedTimeStr {
-		slog.Debug("每小时收听量保存成功", "当前小时总共", count)
+		if count > 0 {
+			slog.Debug("每小时收听量保存成功", "小时", hour, "数量", count)
+		}
 	}
 
 	return nil
