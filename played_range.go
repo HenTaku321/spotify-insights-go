@@ -150,20 +150,48 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient) error {
 		}
 	}
 
-	counts := map[int]int{}
-
-	playedTracks, err := dbc.GetSlice("played-history", -50, -1)
+	var playedTracks []string
+	playedTracks, err = dbc.GetSlice("played-history", -50, -1)
 	if err != nil {
 		return err
 	}
 
+	// 日期部分
+	playedTime, err := time.Parse(time.DateTime, playedTracks[0][len(playedTracks[0])-21:len(playedTracks[0])-2])
+	if err != nil {
+		return err
+	}
+
+	// 倒数每 50 组中第一次的播放记录中的时间在上次保存的时间之后
+	for i := -50; playedTime.After(lastSavedPlayedTime.Add(-time.Second)); i -= 50 {
+		morePlayedTracks, err := dbc.GetSlice("played-history", int64(i), int64(i+49))
+		if err != nil {
+			return err
+		}
+
+		playedTracks = append(morePlayedTracks, playedTracks...)
+
+		// 到头了
+		if len(morePlayedTracks) != 50 {
+			break
+		}
+
+		// 日期部分
+		playedTime, err = time.Parse(time.DateTime, morePlayedTracks[0][len(morePlayedTracks[0])-21:len(morePlayedTracks[0])-2])
+		if err != nil {
+			return err
+		}
+	}
+
+	counts := map[int]int{}
+
 	// 最后会用来当作此次最后保存的时间
 	playedTimeStr := ""
 	for _, item := range playedTracks {
-		// 年月日部分
+		// 日期部分
 		playedTimeStr = item[len(item)-21 : len(item)-2]
 
-		playedTime, err := time.Parse(time.DateTime, playedTimeStr)
+		playedTime, err = time.Parse(time.DateTime, playedTimeStr)
 		if err != nil {
 			return err
 		}
