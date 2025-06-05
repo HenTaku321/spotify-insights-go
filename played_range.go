@@ -142,7 +142,7 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient) error {
 		return err
 	}
 
-	var lastSavedPlayedTime time.Time
+	lastSavedPlayedTime := time.Time{}
 	if lastSavedPlayedTimeStr != "" {
 		lastSavedPlayedTime, err = time.Parse(time.DateTime, lastSavedPlayedTimeStr)
 		if err != nil {
@@ -151,19 +151,10 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient) error {
 	}
 
 	var playedTracks []string
-	playedTracks, err = dbc.GetSlice("played-history", -50, -1)
-	if err != nil {
-		return err
-	}
-
-	// 日期部分
-	playedTime, err := time.Parse(time.DateTime, playedTracks[0][len(playedTracks[0])-21:len(playedTracks[0])-2])
-	if err != nil {
-		return err
-	}
+	playedTime := time.Time{}
 
 	// 倒数每 50 组中第一次的播放记录中的时间在上次保存的时间之后
-	for i := -100; playedTime.After(lastSavedPlayedTime.Add(-time.Second)); i -= 50 {
+	for i := -50; playedTime.After(lastSavedPlayedTime.Add(-time.Second)); i -= 50 {
 		morePlayedTracks, err := dbc.GetSlice("played-history", int64(i), int64(i+49))
 		if err != nil {
 			return err
@@ -171,15 +162,15 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient) error {
 
 		playedTracks = append(morePlayedTracks, playedTracks...)
 
-		// 到头了
-		if len(morePlayedTracks) != 50 {
-			break
-		}
-
 		// 日期部分
 		playedTime, err = time.Parse(time.DateTime, morePlayedTracks[0][len(morePlayedTracks[0])-21:len(morePlayedTracks[0])-2])
 		if err != nil {
 			return err
+		}
+
+		// 到头了
+		if len(morePlayedTracks) != 50 {
+			break
 		}
 	}
 
@@ -201,9 +192,11 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient) error {
 		}
 	}
 
-	err = dbc.SetMap("hourly-played-count", "last-saved-played-time", playedTimeStr)
-	if err != nil {
-		return err
+	if playedTimeStr != "" {
+		err = dbc.SetMap("hourly-played-count", "last-saved-played-time", playedTimeStr)
+		if err != nil {
+			return err
+		}
 	}
 
 	for hour, count := range counts {
