@@ -154,7 +154,7 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient) error {
 	playedTime := time.Time{}
 
 	// 倒数每 50 组中第一次的播放记录中的时间在上次保存的时间之后
-	for i := -50; playedTime.After(lastSavedPlayedTime.Add(-time.Second)); i -= 50 {
+	for i := -50; playedTime.After(lastSavedPlayedTime.Add(-time.Second)) || i == -50; i -= 50 {
 		morePlayedTracks, err := dbc.GetSlice("played-history", int64(i), int64(i+49))
 		if err != nil {
 			return err
