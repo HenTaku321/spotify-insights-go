@@ -20,7 +20,7 @@ type dbClient interface {
 	GetSliceLen(key string) (int64, error)
 }
 
-// ArtistMap 是存到 Valkey 列表 spotify-ids 中的存储格式, 与 Artist 相比移除了 ID 字段
+// ArtistMap 是存到数据库列表 spotify-ids 中的存储格式, 与 Artist 相比移除了 ID 字段
 type ArtistMap struct {
 	Name       string          `json:"name"`
 	Popularity int             `json:"popularity"`
@@ -29,7 +29,7 @@ type ArtistMap struct {
 	Images     []spotify.Image `json:"images"`
 }
 
-// TrackMap 是存到 Valkey 列表 spotify-ids 中的存储格式, 与 Track 相比移除了 ID 字段, 且替换 Artists 字段为 []string, 即 ID
+// TrackMap 是存到数据库列表 spotify-ids 中的存储格式, 与 Track 相比移除了 ID 字段, 且替换 Artists 字段为 []string, 即 ID
 type TrackMap struct {
 	AlbumID    string   `json:"album_id"`
 	ArtistsIDs []string `json:"artists_ids"`
@@ -38,7 +38,7 @@ type TrackMap struct {
 	Popularity int      `json:"popularity"`
 }
 
-// AlbumMap 是存到 Valkey 列表 spotify-ids 中的存储格式, 与 Album 相比移除了 ID 字段, 且替换 Artists 与 Tracks 字段为 []string, 即 ID
+// AlbumMap 是存到数据库列表 spotify-ids 中的存储格式, 与 Album 相比移除了 ID 字段, 且替换 Artists 与 Tracks 字段为 []string, 即 ID
 // AlbumMap 会自动存储 TrackID, 即专辑中的所有歌曲(未实现)
 type AlbumMap struct {
 	Name        string          `json:"name"`
@@ -105,7 +105,7 @@ func (c *Client) getArtistCache(dbc dbClient, id string) (*Artist, error) {
 		}, nil
 	}
 
-	slog.Debug("数据库中缺少此 ID 信息, 从 Spotify 同步并存储", "ID", id, "类型", "Artist")
+	//slog.Debug("数据库中缺少此 ID 信息, 从 Spotify 同步并存储", "ID", id, "类型", "Artist")
 
 	artist, err := c.C.GetArtist(c.Ctx, spotify.ID(id))
 	if err != nil {
@@ -160,7 +160,7 @@ func (c *Client) getAlbumCache(dbc dbClient, id string) (*Album, error) {
 		}, nil
 	}
 
-	slog.Debug("数据库中缺少此 ID 信息, 从 Spotify 同步并存储", "ID", id, "类型", "Album")
+	//slog.Debug("数据库中缺少此 ID 信息, 从 Spotify 同步并存储", "ID", id, "类型", "Album")
 
 	album, err := c.C.GetAlbum(c.Ctx, spotify.ID(id))
 	if err != nil {
@@ -224,7 +224,7 @@ func (c *Client) getTrackCache(dbc dbClient, id string) (*Track, error) {
 		}, nil
 	}
 
-	slog.Debug("数据库中缺少此 ID 信息, 从 Spotify 同步并存储", "ID", id, "类型", "Track")
+	//slog.Debug("数据库中缺少此 ID 信息, 从 Spotify 同步并存储", "ID", id, "类型", "Track")
 
 	track, err := c.C.GetTrack(c.Ctx, spotify.ID(id))
 	if err != nil {
