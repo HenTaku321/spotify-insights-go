@@ -82,20 +82,18 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 	var ph []string
 
 	for _, playedTrack := range truncatedPlayedHistory {
-		playedTrackID := playedTrack.ID
-
-		j, err := json.Marshal(&PlayedHistory{playedTrackID, playedTrack.PlayedAt})
+		j, err := json.Marshal(&PlayedHistory{playedTrack.ID, playedTrack.PlayedAt})
 		if err != nil {
 			return err
 		}
 
-		// 只取年月日
+		// 日期部分
 		days[playedTrack.PlayedAt[:10]]++
 
 		ph = append(ph, string(j))
 	}
 
-	err = dbc.SetSlice("played-history", ph)
+	err = dbc.AppendSlice("played-history", ph)
 	if err != nil {
 		return err
 	}
