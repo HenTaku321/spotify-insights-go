@@ -16,6 +16,18 @@ func (c *Client) GetTotalPlayedCount(dbc dbClient) (int64, error) {
 	return dbc.GetSliceLen("played-history")
 }
 
+// getDateTime 返回 PlayedHistory 的日期部分
+func getDateTime(layout, timeStr string) (time.Time, error) {
+	if timeStr == "" {
+		return time.Time{}, nil
+	}
+
+	if layout == time.DateTime {
+		return time.Parse(layout, timeStr[len(timeStr)-21:len(timeStr)-2])
+	}
+	return time.Parse(layout, timeStr[len(timeStr)-21:len(timeStr)-11])
+}
+
 // getTotalPlayedCountInAType 获取一段时间内一个类型的收听量, 若其中一个日期没有数据会返回 nil
 //func (c *Client) getTotalPlayedCountInAType(dbc dbClient, t1, t2 time.Time) (int64, error) {
 //
@@ -23,6 +35,8 @@ func (c *Client) GetTotalPlayedCount(dbc dbClient) (int64, error) {
 
 // savePlayedRangeOnADay 存储指定日期的收听量
 func (c *Client) savePlayedRangeOnADay(dbc dbClient, date time.Time, count int) error {
+	dateDateOnly := date.Format(time.DateOnly)
+
 	rangeToday, err := c.GetPlayedRangeOnADay(dbc, date)
 	if err != nil {
 		return err
@@ -39,6 +53,8 @@ func (c *Client) savePlayedRangeOnADay(dbc dbClient, date time.Time, count int) 
 		if rangeYesterday != nil {
 			rangeToday.Start = rangeYesterday.End + 1
 			rangeToday.End += rangeYesterday.End
+		} else {
+			rangeToday.End--
 		}
 	} else {
 		rangeToday.End += count
@@ -49,7 +65,114 @@ func (c *Client) savePlayedRangeOnADay(dbc dbClient, date time.Time, count int) 
 		return err
 	}
 
-	return dbc.SetMap("daily-played-range", date.Format(time.DateOnly), string(j))
+	err = dbc.SetMap("daily-played-range", dateDateOnly, string(j))
+	if err != nil {
+		return err
+	}
+
+	rangeTodayStart, err := dbc.GetSliceByIndex("played-history", int64(rangeToday.Start))
+	if err != nil {
+		return err
+	}
+
+	rangeTodayEnd, err := dbc.GetSliceByIndex("played-history", int64(rangeToday.End))
+	if err != nil {
+		return err
+	}
+
+	rangeTodayStartMinusOne, err := dbc.GetSliceByIndex("played-history", int64(rangeToday.Start-1))
+	if err != nil {
+		return err
+	}
+
+	rangeTodayEndPlusOne, err := dbc.GetSliceByIndex("played-history", int64(rangeToday.End+1))
+	if err != nil {
+		return err
+	}
+
+	lastPlayed, err := dbc.GetSliceByIndex("played-history", -1)
+	if err != nil {
+		return err
+	}
+
+	rangeTodayStartTime, err := getDateTime(time.DateOnly, rangeTodayStart)
+	if err != nil {
+		return err
+	}
+
+	rangeTodayEndTime, err := getDateTime(time.DateOnly, rangeTodayEnd)
+	if err != nil {
+		return err
+	}
+
+	rangeTodayStartMinusOneTime, err := getDateTime(time.DateOnly, rangeTodayStartMinusOne)
+	if err != nil {
+		return err
+	}
+
+	lastPlayedTime, err := getDateTime(time.DateOnly, lastPlayed)
+	if err != nil {
+		return err
+	}
+
+	if rangeTodayStartTime.Format(time.DateOnly) != dateDateOnly || rangeTodayEndTime.Format(time.DateOnly) != dateDateOnly || rangeTodayStartMinusOne != "" && rangeTodayStartMinusOneTime.Format(time.DateOnly) == dateDateOnly && rangeToday.Start > 0 || dateDateOnly == lastPlayedTime.Format(time.DateOnly) && rangeTodayEndPlusOne != "" {
+		slog.Warn("每日播放量统计不匹配, 可能是运行时退出导致, 正在修复")
+		defer slog.Info("每日播放量统计修复完成")
+		err = dbc.Delete("daily-played-range")
+		if err != nil {
+			return err
+		}
+
+		playedRanges := map[time.Time]*PlayedRange{}
+
+		for i := 0; ; i += 50 {
+			playedHistory, err := dbc.GetSlice("played-history", int64(i), int64(i+49))
+			if err != nil {
+				return err
+			}
+
+			if len(playedHistory) == 0 {
+				break
+			}
+
+			for _, item := range playedHistory {
+				playedTime, err := getDateTime(time.DateOnly, item)
+				if err != nil {
+					return err
+				}
+
+				// 第一次统计这个日期
+				if playedRanges[playedTime] == nil {
+					playedRanges[playedTime] = &PlayedRange{}
+					if playedRanges[playedTime.AddDate(0, 0, -1)] != nil {
+						playedRanges[playedTime].Start = playedRanges[playedTime.AddDate(0, 0, -1)].End + 1
+						playedRanges[playedTime].End = playedRanges[playedTime].Start
+					}
+				} else {
+					playedRanges[playedTime].End++
+				}
+			}
+
+			// 到头了
+			if len(playedHistory) != 50 {
+				break
+			}
+		}
+
+		for day, pr := range playedRanges {
+			j, err = json.Marshal(pr)
+			if err != nil {
+				return err
+			}
+
+			err = dbc.SetMap("daily-played-range", day.Format(time.DateOnly), string(j))
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // GetPlayedRangeOnADay 获取指定日期的收听量, 若不存在会返回 nil
@@ -150,50 +273,51 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient) error {
 		}
 	}
 
-	var playedTracks []string
+	var playedHistory []string
 	playedTime := time.Time{}
 
 	// 倒数每 50 组中第一次的播放记录中的时间在上次保存的时间之后
-	for i := -50; playedTime.After(lastSavedPlayedTime.Add(-time.Second)) || i == -50; i -= 50 {
-		morePlayedTracks, err := dbc.GetSlice("played-history", int64(i), int64(i+49))
+	for i := -50; playedTime.After(lastSavedPlayedTime.Add(-time.Second)) || i == -50 || lastSavedPlayedTime.IsZero(); i -= 50 {
+		morePlayedHistory, err := dbc.GetSlice("played-history", int64(i), int64(i+49))
 		if err != nil {
 			return err
 		}
 
-		playedTracks = append(morePlayedTracks, playedTracks...)
+		if len(morePlayedHistory) == 0 {
+			break
+		}
 
-		// 日期部分
-		playedTime, err = time.Parse(time.DateTime, morePlayedTracks[0][len(morePlayedTracks[0])-21:len(morePlayedTracks[0])-2])
+		playedHistory = append(morePlayedHistory, playedHistory...)
+
+		playedTime, err = getDateTime(time.DateTime, playedHistory[0])
 		if err != nil {
 			return err
 		}
 
 		// 到头了
-		if len(morePlayedTracks) != 50 {
+		if len(morePlayedHistory) != 50 {
 			break
 		}
 	}
 
 	counts := map[int]int{}
+	lastPlayedTime := ""
 
 	// 最后会用来当作此次最后保存的时间
-	playedTimeStr := ""
-	for _, item := range playedTracks {
-		// 日期部分
-		playedTimeStr = item[len(item)-21 : len(item)-2]
-
-		playedTime, err = time.Parse(time.DateTime, playedTimeStr)
+	for _, item := range playedHistory {
+		playedTime, err = getDateTime(time.DateTime, item)
 		if err != nil {
 			return err
 		}
 
 		if playedTime.After(lastSavedPlayedTime.Add(time.Second)) {
 			counts[playedTime.Hour()]++
+			lastPlayedTime = playedTime.Format(time.DateTime)
 		}
 	}
 
-	if playedTimeStr != "" {
-		err = dbc.SetMap("hourly-played-count", "last-saved-played-time", playedTimeStr)
+	if lastPlayedTime != "" {
+		err = dbc.SetMap("hourly-played-count", "last-saved-played-time", lastPlayedTime)
 		if err != nil {
 			return err
 		}
@@ -214,6 +338,33 @@ func (c *Client) saveHourlyPlayedCount(dbc dbClient) error {
 		if count > 0 {
 			slog.Debug("每小时收听量保存成功", "小时", hour, "数量", count, "总共", total)
 		}
+	}
+
+	all, err := dbc.GetMapAll("hourly-played-count")
+	if err != nil {
+		return err
+	}
+
+	totalCount := 0
+	for _, count := range all {
+		if i, err := strconv.Atoi(count); err == nil {
+			totalCount += i
+		}
+	}
+
+	t, err := c.GetTotalPlayedCount(dbc)
+	if err != nil {
+		return err
+	}
+
+	if totalCount != int(t) {
+		slog.Warn("每小时播放量统计错误, 可能是运行时退出导致, 正在修复")
+		defer slog.Info("每小时播放量统计修复完成")
+		err = dbc.Delete("hourly-played-count")
+		if err != nil {
+			return err
+		}
+		return c.saveHourlyPlayedCount(dbc)
 	}
 
 	return nil
