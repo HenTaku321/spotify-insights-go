@@ -7,17 +7,21 @@ import (
 	"time"
 )
 
+// dbClient 参考 Redis
 type dbClient interface {
 	SetString(key string, value string, ex *time.Duration) error
 	GetString(key string) (string, error)
 	SetMap(key, field, value string) error
 	GetMapStr(key, field string) (string, error)
 	GetMapInt64(key, field string) (int64, error)
+	GetMapLen(key string) (int64, error)
+	GetMapAll(key string) (map[string]string, error)
 	CheckIfMapFieldExists(key, field string) (bool, error)
-	SetSlice(key string, value []string) error
+	AppendSlice(key string, value []string) error
 	GetSlice(key string, start, stop int64) ([]string, error)
 	GetSliceByIndex(key string, index int64) (string, error)
 	GetSliceLen(key string) (int64, error)
+	Delete(key string) error
 }
 
 // ArtistMap 是存到数据库列表 spotify-ids 中的存储格式, 与 Artist 相比移除了 ID 字段
