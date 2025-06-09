@@ -68,7 +68,7 @@ func (a *Artist) toMap() *ArtistMap {
 func (a *Album) toMap() *AlbumMap {
 	return &AlbumMap{
 		Name:        a.Name,
-		ArtistsIDs:  fmtArtistsIDs(a.Artists),
+		ArtistsIDs:  extractArtistsIDs(a.Artists),
 		Images:      a.Images,
 		ReleaseDate: a.ReleaseDate,
 		TotalTracks: a.TotalTracks,
@@ -79,7 +79,7 @@ func (a *Album) toMap() *AlbumMap {
 func (t *Track) toMap() *TrackMap {
 	return &TrackMap{
 		AlbumID:    t.Album.ID,
-		ArtistsIDs: fmtArtistsIDs(t.Artists),
+		ArtistsIDs: extractArtistsIDs(t.Artists),
 		Duration:   t.Duration,
 		Name:       t.Name,
 		Popularity: t.Popularity,
@@ -87,9 +87,8 @@ func (t *Track) toMap() *TrackMap {
 }
 
 type PlayedTrack struct {
-	Track
+	Track    `json:"track"`
 	PlayedAt string `json:"played_at"`
-	//EmbedURL string      `json:"embed_url"`
 }
 
 func (c *Client) runGroupShort(dbc dbClient) {
@@ -103,11 +102,11 @@ func (c *Client) runGroupShort(dbc dbClient) {
 		err = c.saveRecentlyPlayedTracks(dbc)
 	}
 
-	err = c.saveHourlyPlayedCount(dbc)
+	err = c.saveHourlyPlaybackCounts(dbc)
 	for err != nil {
 		slog.Warn("Spotify 存储每小时收听量失败, 一分钟后重试", "error", err)
 		time.Sleep(time.Minute)
-		err = c.saveHourlyPlayedCount(dbc)
+		err = c.saveHourlyPlaybackCounts(dbc)
 	}
 
 }
@@ -128,12 +127,11 @@ func (c *Client) runGroupLong(dbc dbClient) {
 	}
 }
 
-// Run 运行所有定时任务, 阻塞, 若不清楚参数则推荐设置为 time.Hour
-func (c *Client) Run(dbc dbClient, recentlyPlayedDuration time.Duration) {
+func (c *Client) Run(dbc dbClient) {
 	c.runGroupShort(dbc)
 	c.runGroupLong(dbc)
 
-	recentlyPlayedTicker := time.NewTicker(recentlyPlayedDuration)
+	recentlyPlayedTicker := time.NewTicker(time.Hour)
 	defer recentlyPlayedTicker.Stop()
 
 	go func() {
@@ -165,12 +163,12 @@ func saveID(dbc dbClient, id string, data interface{}) error {
 	return nil
 }
 
-func fmtArtistsIDs(artists []Artist) []string {
-	var res []string
+func extractArtistsIDs(artists []Artist) []string {
+	var ids []string
 	for _, artist := range artists {
-		res = append(res, artist.ID)
+		ids = append(ids, artist.ID)
 	}
-	return res
+	return ids
 }
 
 func (c *Client) convertArtist(artist *spotify.FullArtist) *Artist {
