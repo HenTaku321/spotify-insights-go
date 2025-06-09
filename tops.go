@@ -2,11 +2,12 @@ package spotify
 
 import (
 	"encoding/json"
-	"github.com/zmb3/spotify/v2"
 	"log/slog"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/zmb3/spotify/v2"
 )
 
 // TODO: DailyTrack, Album
@@ -27,7 +28,7 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 		return err
 	}
 
-	var t time.Time
+	t := time.Time{}
 
 	if m != "" {
 		t, err = time.Parse(time.DateOnly, m)
@@ -47,7 +48,7 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 			return err
 		}
 
-		var res []string
+		var artists []string
 
 		for _, artist := range fap.Artists {
 			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", artist.ID.String())
@@ -61,10 +62,10 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 					return err
 				}
 			}
-			res = append(res, artist.ID.String())
+			artists = append(artists, artist.ID.String())
 		}
 
-		j, err := json.Marshal(res)
+		j, err := json.Marshal(artists)
 		if err != nil {
 			return err
 		}
@@ -97,7 +98,7 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 			return err
 		}
 
-		var res []string
+		var artists []string
 
 		for _, artist := range fap.Artists {
 			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", artist.ID.String())
@@ -111,10 +112,10 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 					return err
 				}
 			}
-			res = append(res, artist.ID.String())
+			artists = append(artists, artist.ID.String())
 		}
 
-		j, err := json.Marshal(res)
+		j, err := json.Marshal(artists)
 		if err != nil {
 			return err
 		}
@@ -147,7 +148,7 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 			return err
 		}
 
-		var res []string
+		var artists []string
 
 		for _, artist := range fap.Artists {
 			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", artist.ID.String())
@@ -161,10 +162,10 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 					return err
 				}
 			}
-			res = append(res, artist.ID.String())
+			artists = append(artists, artist.ID.String())
 		}
 
-		j, err := json.Marshal(res)
+		j, err := json.Marshal(artists)
 		if err != nil {
 			return err
 		}
@@ -185,7 +186,7 @@ func (c *Client) saveTopArtists(dbc dbClient) error {
 	return nil
 }
 
-func (c *Client) replace(dbc dbClient, track spotify.FullTrack, timeNow time.Time, timeDuration time.Time) (*Track, error) {
+func (c *Client) correctTrack(dbc dbClient, track spotify.FullTrack, timeNow time.Time, lookbackDuration time.Time) (*Track, error) {
 	searchResults, err := c.C.Search(c.Ctx, "artist:"+track.Artists[0].Name+" track:"+track.Name, spotify.SearchTypeTrack)
 	if err != nil {
 		return nil, err
@@ -199,7 +200,7 @@ func (c *Client) replace(dbc dbClient, track spotify.FullTrack, timeNow time.Tim
 		}
 	}
 
-	tops, err := c.GetTopTracksIDs(dbc, timeDuration, timeNow, 50)
+	tops, err := c.GetTopTracksIDs(dbc, lookbackDuration, timeNow, 50)
 	if err != nil {
 		return nil, err
 	}
@@ -213,14 +214,14 @@ func (c *Client) replace(dbc dbClient, track spotify.FullTrack, timeNow time.Tim
 	}
 
 	// 按照是否点赞补救
-	for _, correctSearchResult := range correctSearchResults {
-		saved2, err := c.C.UserHasTracks(c.Ctx, correctSearchResult.ID)
+	for _, v := range correctSearchResults {
+		isSaved, err := c.C.UserHasTracks(c.Ctx, v.ID)
 		if err != nil {
 			return nil, err
 		}
 
-		if saved2[0] {
-			return c.convertTrack(dbc, &correctSearchResult)
+		if isSaved[0] {
+			return c.convertTrack(dbc, &v)
 		}
 	}
 
@@ -243,7 +244,7 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 		return err
 	}
 
-	var t time.Time
+	t := time.Time{}
 
 	tn := time.Now()
 	tns := tn.Format(time.DateOnly)
@@ -263,7 +264,7 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 			return err
 		}
 
-		var res []string
+		var tracks []string
 
 		for _, track := range ftp.Tracks {
 			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", track.ID.String())
@@ -292,24 +293,24 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 			if !saved[0] {
 				slog.Info("此歌曲未点赞, 可能是 Spotify 的 Bug, 进行补救", "名称", track.Name, "ID", track.ID, "艺术家", track.Artists[0].Name)
 
-				replacedTrack, err := c.replace(dbc, track, tn, tn.AddDate(0, -1, 0))
+				ct, err := c.correctTrack(dbc, track, tn, tn.AddDate(0, -1, 0))
 				if err != nil {
 					return err
 				}
 
-				if replacedTrack != nil {
-					slog.Info("补救成功, 替换为", "名称", replacedTrack.Name, "ID", replacedTrack.ID, "艺术家", replacedTrack.Artists[0].Name)
-					res = append(res, replacedTrack.ID)
+				if ct != nil {
+					slog.Info("补救成功, 替换为", "名称", ct.Name, "ID", ct.ID, "艺术家", ct.Artists[0].Name)
+					tracks = append(tracks, ct.ID)
 				} else {
 					slog.Info("补救失败, 未替换")
 				}
 
 			} else {
-				res = append(res, track.ID.String())
+				tracks = append(tracks, track.ID.String())
 			}
 		}
 
-		j, err := json.Marshal(res)
+		j, err := json.Marshal(tracks)
 		if err != nil {
 			return err
 		}
@@ -342,7 +343,7 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 			return err
 		}
 
-		var res []string
+		var tracks []string
 
 		for _, track := range ftp.Tracks {
 			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", track.ID.String())
@@ -370,25 +371,25 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 			if !saved[0] {
 				slog.Info("此歌曲未点赞, 可能是 Spotify 的 Bug, 进行补救", "名称", track.Name, "ID", track.ID, "艺术家", track.Artists[0].Name)
 
-				replacedTrack, err := c.replace(dbc, track, tn, tn.AddDate(0, -6, 0))
+				ct, err := c.correctTrack(dbc, track, tn, tn.AddDate(0, -6, 0))
 				if err != nil {
 					return err
 				}
 
-				if replacedTrack != nil {
-					slog.Info("补救成功, 替换为", "名称", replacedTrack.Name, "ID", replacedTrack.ID, "艺术家", replacedTrack.Artists[0].Name)
-					res = append(res, replacedTrack.ID)
+				if ct != nil {
+					slog.Info("补救成功, 替换为", "名称", ct.Name, "ID", ct.ID, "艺术家", ct.Artists[0].Name)
+					tracks = append(tracks, ct.ID)
 				} else {
 					slog.Info("补救失败, 未替换")
 				}
 
 			} else {
-				res = append(res, track.ID.String())
+				tracks = append(tracks, track.ID.String())
 			}
 
 		}
 
-		j, err := json.Marshal(res)
+		j, err := json.Marshal(tracks)
 		if err != nil {
 			return err
 		}
@@ -421,7 +422,7 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 			return err
 		}
 
-		var res []string
+		var tracks []string
 
 		for _, track := range ftp.Tracks {
 			exists, err := dbc.CheckIfMapFieldExists("spotify-ids", track.ID.String())
@@ -449,25 +450,25 @@ func (c *Client) saveTopTracks(dbc dbClient) error {
 			if !saved[0] {
 				slog.Info("此歌曲未点赞, 可能是 Spotify 的 Bug, 进行补救", "名称", track.Name, "ID", track.ID, "艺术家", track.Artists[0].Name)
 
-				replacedTrack, err := c.replace(dbc, track, tn, tn.AddDate(-1, 0, 0))
+				ct, err := c.correctTrack(dbc, track, tn, tn.AddDate(-1, 0, 0))
 				if err != nil {
 					return err
 				}
 
-				if replacedTrack != nil {
-					slog.Info("补救成功, 替换为", "名称", replacedTrack.Name, "ID", replacedTrack.ID, "艺术家", replacedTrack.Artists[0].Name)
-					res = append(res, replacedTrack.ID)
+				if ct != nil {
+					slog.Info("补救成功, 替换为", "名称", ct.Name, "ID", ct.ID, "艺术家", ct.Artists[0].Name)
+					tracks = append(tracks, ct.ID)
 				} else {
 					slog.Info("补救失败, 未替换")
 				}
 
 			} else {
-				res = append(res, track.ID.String())
+				tracks = append(tracks, track.ID.String())
 			}
 
 		}
 
-		j, err := json.Marshal(res)
+		j, err := json.Marshal(tracks)
 		if err != nil {
 			return err
 		}
@@ -496,7 +497,7 @@ type Tops struct {
 // GetTopTracksIDs TODO: 算法需要增强
 // GetTopTracksIDs 返回一段时间内的热门曲目ID(包括t1和t2), 若其中一个日期没有数据会返回nil, 若播放记录中的ID对应的信息不存在会跳过, limit为0则不限制
 func (c *Client) GetTopTracksIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]Tops, error) {
-	rangeFromT1ToT2, err := c.GetPlayedRangeDuringATime(dbc, t1, t2)
+	rangeFromT1ToT2, err := c.GetPlaybackRangeDuringATime(dbc, t1, t2)
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +506,7 @@ func (c *Client) GetTopTracksIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]T
 		return nil, nil
 	}
 
-	ph, err := c.GetPlayedHistory(dbc, int64(rangeFromT1ToT2.Start), int64(rangeFromT1ToT2.End))
+	ph, err := c.GetPlaybackHistory(dbc, int64(rangeFromT1ToT2.Start), int64(rangeFromT1ToT2.End))
 	if err != nil {
 		return nil, err
 	}
@@ -514,15 +515,15 @@ func (c *Client) GetTopTracksIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]T
 		return nil, nil
 	}
 
-	trackCount := make(map[string]int)
+	trackCounts := map[string]int{}
 
 	for _, track := range ph {
-		trackCount[track.ID]++
+		trackCounts[track.ID]++
 	}
 
 	var tops []Tops
 
-	for id, count := range trackCount {
+	for id, count := range trackCounts {
 		tops = append(tops, Tops{id, count})
 	}
 
@@ -540,7 +541,7 @@ func (c *Client) GetTopTracksIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]T
 // GetTopArtistsIDs TODO: 算法需要增强
 // GetTopArtistsIDs 返回一段时间内的热门艺术家ID(包括t1和t2), 若其中一个日期没有数据会返回nil, 若播放记录中的ID对应的信息不存在会跳过, limit为0则不限制
 func (c *Client) GetTopArtistsIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]Tops, error) {
-	rangeFromT1ToT2, err := c.GetPlayedRangeDuringATime(dbc, t1, t2)
+	rangeFromT1ToT2, err := c.GetPlaybackRangeDuringATime(dbc, t1, t2)
 	if err != nil {
 		return nil, err
 	}
@@ -549,26 +550,26 @@ func (c *Client) GetTopArtistsIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]
 		return nil, nil
 	}
 
-	pt, err := c.GetPlayedHistory(dbc, int64(rangeFromT1ToT2.Start), int64(rangeFromT1ToT2.End))
+	ph, err := c.GetPlaybackHistory(dbc, int64(rangeFromT1ToT2.Start), int64(rangeFromT1ToT2.End))
 	if err != nil {
 		return nil, err
 	}
 
-	if pt == nil {
+	if ph == nil {
 		return nil, nil
 	}
 
-	artistCount := make(map[string]int)
+	artistCounts := map[string]int{}
 
-	for _, track := range pt {
+	for _, track := range ph {
 		for _, artist := range track.Artists {
-			artistCount[artist.ID]++
+			artistCounts[artist.ID]++
 		}
 	}
 
 	var tops []Tops
 
-	for id, count := range artistCount {
+	for id, count := range artistCounts {
 		tops = append(tops, Tops{id, count})
 	}
 
@@ -586,7 +587,7 @@ func (c *Client) GetTopArtistsIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]
 // GetTopAlbumsIDs TODO: 算法需要增强
 // GetTopAlbumsIDs 返回一段时间内的热门专辑ID(包括t1和t2), 若其中一个日期没有数据会返回nil, 若播放记录中的ID对应的信息不存在会跳过, limit为0则不限制
 func (c *Client) GetTopAlbumsIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]Tops, error) {
-	rangeFromT1ToT2, err := c.GetPlayedRangeDuringATime(dbc, t1, t2)
+	rangeFromT1ToT2, err := c.GetPlaybackRangeDuringATime(dbc, t1, t2)
 	if err != nil {
 		return nil, err
 	}
@@ -595,7 +596,7 @@ func (c *Client) GetTopAlbumsIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]T
 		return nil, nil
 	}
 
-	ph, err := c.GetPlayedHistory(dbc, int64(rangeFromT1ToT2.Start), int64(rangeFromT1ToT2.End))
+	ph, err := c.GetPlaybackHistory(dbc, int64(rangeFromT1ToT2.Start), int64(rangeFromT1ToT2.End))
 	if err != nil {
 		return nil, err
 	}
@@ -604,15 +605,15 @@ func (c *Client) GetTopAlbumsIDs(dbc dbClient, t1, t2 time.Time, limit int) ([]T
 		return nil, nil
 	}
 
-	albumCount := make(map[string]int)
+	albumCounts := map[string]int{}
 
 	for _, track := range ph {
-		albumCount[track.Album.ID]++
+		albumCounts[track.Album.ID]++
 	}
 
 	var tops []Tops
 
-	for id, count := range albumCount {
+	for id, count := range albumCounts {
 		tops = append(tops, Tops{id, count})
 	}
 
