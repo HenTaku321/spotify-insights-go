@@ -31,23 +31,23 @@ func main() {
 	defer vc.C.Close()
 
 	sc := spotify.GetClient(vc, []byte(os.Getenv("SPOTIFY_KEY")))
-	sc.Run(vc, time.Hour)
+	sc.Run(vc)
 }
 
 ```
 ### 目前可用的功能(更新中):
 ```
 Run - 运行需要的定时任务
-GetPlayedRangeDuringATime
+GetPlaybackRangeDuringATime
+GetPlaybackRangeOnADay
 GetTopAlbumsIDs
 GetTopArtistsIDs
 GetTopTracksIDs
-GetPlayedHistory
-GetPlayedHistoryByIndex
-GetPlayedHistoryIDs
-GetPlayedHistoryIDByIndex
+GetPlaybackHistory
+GetPlaybackHistoryByIndex
+GetPlaybackHistoryIDs
+GetPlaybackHistoryIDByIndex
 GetCurrentlyPlayingTrack
-GetPlayedRangeOnADay
-GetTotalPlayedCount
-GetHourlyPlayedCount
+GetTotalPlaybackHistoryCount
+GetHourlyPlayBackCounts
 ```
