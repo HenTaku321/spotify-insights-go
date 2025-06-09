@@ -25,7 +25,7 @@ func getTime(layout, timeStr string) (time.Time, error) {
 	if layout == time.DateTime {
 		return time.Parse(layout, timeStr[44:63])
 	}
-	return time.Parse(layout, timeStr[44:55])
+	return time.Parse(layout, timeStr[44:54])
 }
 
 // getTotalPlayedCountInAType 获取一段时间内一个类型的收听量, 若其中一个日期没有数据会返回 nil
@@ -97,10 +97,10 @@ func (c *Client) savePlaybackRangeOnADay(dbc dbClient, date time.Time, count int
 		return err
 	}
 
-	rangeTodayStartTimeStr := rangeTodayStart[44:55]
-	rangeTodayEndTimeStr := rangeTodayEnd[44:55]
-	rangeTodayStartMinusOneTimeStr := rangeTodayStartMinusOne[44:55]
-	lastPlayedTimeStr := lastPlayed[44:55]
+	rangeTodayStartTimeStr := rangeTodayStart[44:54]
+	rangeTodayEndTimeStr := rangeTodayEnd[44:54]
+	rangeTodayStartMinusOneTimeStr := rangeTodayStartMinusOne[44:54]
+	lastPlayedTimeStr := lastPlayed[44:54]
 
 	if rangeTodayStartTimeStr != dateDateOnly || rangeTodayEndTimeStr != dateDateOnly || rangeTodayStartMinusOne != "" && rangeTodayStartMinusOneTimeStr == dateDateOnly && rangeToday.Start > 0 || dateDateOnly == lastPlayedTimeStr && rangeTodayEndPlusOne != "" {
 		slog.Warn("每日播放量统计不匹配, 可能是运行时退出导致, 正在修复")
