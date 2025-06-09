@@ -2,7 +2,7 @@ package spotify
 
 import "time"
 
-type Playing struct {
+type CurrentlyPlaying struct {
 	Track
 	//InfoStructure InfoStructure `json:"info_structure"`
 	//IsPlaying     bool          `json:"is_playing"`
@@ -10,7 +10,7 @@ type Playing struct {
 }
 
 // FromSpotify
-func (c *Client) GetCurrentlyPlayingTrack(dbc dbClient) (*Playing, error) {
+func (c *Client) GetCurrentlyPlayingTrack(dbc dbClient) (*CurrentlyPlaying, error) {
 	cp, err := c.C.PlayerCurrentlyPlaying(c.Ctx)
 	if err != nil {
 		return nil, err
@@ -25,7 +25,5 @@ func (c *Client) GetCurrentlyPlayingTrack(dbc dbClient) (*Playing, error) {
 		return nil, err
 	}
 
-	p := &Playing{*track, time.UnixMilli(int64(cp.Item.Duration)).UTC().Format(time.TimeOnly)}
-
-	return p, nil
+	return &CurrentlyPlaying{*track, time.UnixMilli(int64(cp.Item.Duration)).UTC().Format(time.TimeOnly)}, nil
 }
