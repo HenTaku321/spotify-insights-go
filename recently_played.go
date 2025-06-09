@@ -2,98 +2,95 @@ package spotify
 
 import (
 	"encoding/json"
-	"log/slog"
 	"slices"
 	"time"
 
 	"github.com/zmb3/spotify/v2"
 )
 
-// PlayedHistory 是数据库列表 played-history中 的存储格式
-type PlayedHistory struct {
+// PlaybackEntry 是数据库列表 playback-history 中的存储格式
+type PlaybackEntry struct {
 	ID       string `json:"id"`
 	PlayedAt string `json:"played_at"`
-	// EmbedURL string `json:"embed_url"`
 }
 
-func (c *Client) getRecentlyPlayedTracksFromSpotify() ([]PlayedHistory, error) {
+func (c *Client) getRecentlyPlayedTracksFromSpotify() ([]PlaybackEntry, error) {
 	recentlyPlayedTracks, err := c.C.PlayerRecentlyPlayedOpt(c.Ctx, &spotify.RecentlyPlayedOptions{Limit: 50})
 	if err != nil {
 		return nil, err
 	}
 
-	var res []PlayedHistory
+	var playbackHistory []PlaybackEntry
 
 	for _, item := range recentlyPlayedTracks {
-		res = append(res, PlayedHistory{item.Track.ID.String(), item.PlayedAt.Local().Format(time.DateTime)})
+		playbackHistory = append(playbackHistory, PlaybackEntry{item.Track.ID.String(), item.PlayedAt.Local().Format(time.DateTime)})
 	}
 
-	return res, nil
+	return playbackHistory, nil
 }
 
-func (c *Client) truncate(dbc dbClient, playedHistory []PlayedHistory) ([]PlayedHistory, error) {
-	latestPlayed, err := dbc.GetSliceByIndex("played-history", -1)
+func (c *Client) truncate(dbc dbClient, playbackHistory []PlaybackEntry) ([]PlaybackEntry, error) {
+	lastPlayed, err := dbc.GetSliceByIndex("playback-history", -1)
 	if err != nil {
 		return nil, err
 	}
 
-	if latestPlayed == "" {
-		return playedHistory, nil
+	if lastPlayed == "" {
+		return playbackHistory, nil
 	}
 
-	ph := PlayedHistory{}
+	pe := PlaybackEntry{}
 
-	err = json.Unmarshal([]byte(latestPlayed), &ph)
+	err = json.Unmarshal([]byte(lastPlayed), &pe)
 	if err != nil {
 		return nil, err
 	}
 
-	latestPlayedIndex := 0
+	lastPlayedIndex := 0
 
-	for ; latestPlayedIndex < len(playedHistory); latestPlayedIndex++ {
-		if playedHistory[latestPlayedIndex].PlayedAt == ph.PlayedAt {
+	for ; lastPlayedIndex < len(playbackHistory); lastPlayedIndex++ {
+		if playbackHistory[lastPlayedIndex].PlayedAt == pe.PlayedAt {
 			break
 		}
 	}
 
-	return playedHistory[:latestPlayedIndex], nil
+	return playbackHistory[:lastPlayedIndex], nil
 }
 
 // saveRecentlyPlayedTracks 追加最近收听的歌曲并统计每日收听量, 并以 *Map 的 JSON 格式存储信息
 func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
-	days := map[string]int{}
-
 	recentlyPlayedTracks, err := c.getRecentlyPlayedTracksFromSpotify()
 	if err != nil {
 		return err
 	}
 
-	truncatedPlayedHistory, err := c.truncate(dbc, recentlyPlayedTracks)
+	truncatedPlaybackHistory, err := c.truncate(dbc, recentlyPlayedTracks)
 	if err != nil {
 		return err
 	}
 
-	if len(truncatedPlayedHistory) == 0 {
+	if len(truncatedPlaybackHistory) == 0 {
 		return nil
 	}
 
-	slices.Reverse(truncatedPlayedHistory)
+	slices.Reverse(truncatedPlaybackHistory)
 
-	var ph []string
+	days := map[string]int{}
+	var playbackHistory []string
 
-	for _, playedTrack := range truncatedPlayedHistory {
-		j, err := json.Marshal(&PlayedHistory{playedTrack.ID, playedTrack.PlayedAt})
+	for _, entry := range truncatedPlaybackHistory {
+		j, err := json.Marshal(&PlaybackEntry{entry.ID, entry.PlayedAt})
 		if err != nil {
 			return err
 		}
 
 		// 日期部分
-		days[playedTrack.PlayedAt[:10]]++
+		days[entry.PlayedAt[:10]]++
 
-		ph = append(ph, string(j))
+		playbackHistory = append(playbackHistory, string(j))
 	}
 
-	err = dbc.AppendSlice("played-history", ph)
+	err = dbc.AppendSlice("playback-history", playbackHistory)
 	if err != nil {
 		return err
 	}
@@ -104,44 +101,37 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 			return err
 		}
 
-		err = c.savePlayedRangeOnADay(dbc, t, count)
+		err = c.savePlaybackRangeOnADay(dbc, t, count)
+		if err != nil {
+			return err
+		}
+	}
+
+	var truncatedRecentlyPlayedTracks []PlayedTrack
+
+	for _, entry := range truncatedPlaybackHistory {
+		track, err := c.getTrackCache(dbc, entry.ID)
 		if err != nil {
 			return err
 		}
 
-		slog.Debug("最近收听的歌曲保存成功", "日期", day, "数量", count)
+		truncatedRecentlyPlayedTracks = append(truncatedRecentlyPlayedTracks, PlayedTrack{*track, entry.PlayedAt})
 	}
 
-	var truncatedRecentlyPlayedTrack []PlayedTrack
-
-	for _, played := range truncatedPlayedHistory {
-		track, err := c.getTrackCache(dbc, played.ID)
-		if err != nil {
-			return err
-		}
-
-		truncatedRecentlyPlayedTrack = append(truncatedRecentlyPlayedTrack, PlayedTrack{*track, played.PlayedAt})
-	}
-
-	return c.savePlayedCount(dbc, truncatedRecentlyPlayedTrack)
+	return c.savePlaybackCounts(dbc, truncatedRecentlyPlayedTracks)
 }
 
-func (c *Client) GetPlayedHistory(dbc dbClient, start, stop int64) ([]PlayedTrack, error) {
-	playedHistory, err := dbc.GetSlice("played-history", start, stop)
+func (c *Client) GetPlaybackHistory(dbc dbClient, start, stop int64) ([]PlayedTrack, error) {
+	playbackHistory, err := dbc.GetSlice("playback-history", start, stop)
 	if err != nil {
 		return nil, err
 	}
 
-	var res []PlayedTrack
-	ph := PlayedHistory{}
+	var playedTracks []PlayedTrack
 
-	for _, played := range playedHistory {
-		err = json.Unmarshal([]byte(played), &ph)
-		if err != nil {
-			return nil, err
-		}
-
-		track, err := c.getTrackCache(dbc, ph.ID)
+	for _, entry := range playbackHistory {
+		// ID 部分
+		track, err := c.getTrackCache(dbc, entry[7:29])
 		if err != nil {
 			return nil, err
 		}
@@ -150,31 +140,32 @@ func (c *Client) GetPlayedHistory(dbc dbClient, start, stop int64) ([]PlayedTrac
 			continue
 		}
 
-		res = append(res, PlayedTrack{*track, ph.PlayedAt})
+		// 日期部分
+		playedTracks = append(playedTracks, PlayedTrack{*track, entry[44:63]})
 	}
 
-	return res, nil
+	return playedTracks, nil
 }
 
-// GetPlayedHistoryByIndex 若播放记录中的 ID 对应的 Track 不存在会返回 nil
-func (c *Client) GetPlayedHistoryByIndex(dbc dbClient, index int64) (*PlayedTrack, error) {
-	played, err := dbc.GetSliceByIndex("played-history", index)
+// GetPlaybackHistoryByIndex 若播放记录中的 ID 对应的 Track 不存在会返回 nil
+func (c *Client) GetPlaybackHistoryByIndex(dbc dbClient, index int64) (*PlayedTrack, error) {
+	entry, err := dbc.GetSliceByIndex("playback-history", index)
 	if err != nil {
 		return nil, err
 	}
 
-	if played == "" {
+	if entry == "" {
 		return nil, nil
 	}
 
-	ph := PlayedHistory{}
+	pe := &PlaybackEntry{}
 
-	err = json.Unmarshal([]byte(played), &ph)
+	err = json.Unmarshal([]byte(entry), pe)
 	if err != nil {
 		return nil, err
 	}
 
-	track, err := c.getTrackCache(dbc, ph.ID)
+	track, err := c.getTrackCache(dbc, pe.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -183,47 +174,47 @@ func (c *Client) GetPlayedHistoryByIndex(dbc dbClient, index int64) (*PlayedTrac
 		return nil, nil
 	}
 
-	return &PlayedTrack{*track, ph.PlayedAt}, nil
+	return &PlayedTrack{*track, pe.PlayedAt}, nil
 }
 
-func (c *Client) GetPlayedHistoryIDs(dbc dbClient, start, stop int64) ([]string, error) {
-	playedHistory, err := dbc.GetSlice("played-history", start, stop)
+func (c *Client) GetPlaybackHistoryIDs(dbc dbClient, start, stop int64) ([]string, error) {
+	playbackHistorySli, err := dbc.GetSlice("playback-history", start, stop)
 	if err != nil {
 		return nil, err
 	}
 
 	var res []string
-	ph := PlayedHistory{}
+	playbackHistory := &PlaybackEntry{}
 
-	for _, played := range playedHistory {
-		err = json.Unmarshal([]byte(played), &ph)
+	for _, entry := range playbackHistorySli {
+		err = json.Unmarshal([]byte(entry), playbackHistory)
 		if err != nil {
 			return nil, err
 		}
 
-		res = append(res, ph.ID)
+		res = append(res, playbackHistory.ID)
 	}
 
 	return res, nil
 }
 
-// GetPlayedHistoryIDByIndex 若播放记录中的 index 对应的信息不存在会返回 nil
-func (c *Client) GetPlayedHistoryIDByIndex(dbc dbClient, index int64) (string, error) {
-	played, err := dbc.GetSliceByIndex("played-history", index)
+// GetPlaybackHistoryIDByIndex 若播放记录中的 index 对应的信息不存在会返回 nil
+func (c *Client) GetPlaybackHistoryIDByIndex(dbc dbClient, index int64) (string, error) {
+	entry, err := dbc.GetSliceByIndex("playback-history", index)
 	if err != nil {
 		return "", err
 	}
 
-	if played == "" {
+	if entry == "" {
 		return "", nil
 	}
 
-	ph := PlayedHistory{}
+	pe := &PlaybackEntry{}
 
-	err = json.Unmarshal([]byte(played), &ph)
+	err = json.Unmarshal([]byte(entry), pe)
 	if err != nil {
 		return "", err
 	}
 
-	return ph.ID, nil
+	return pe.ID, nil
 }
