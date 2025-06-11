@@ -247,7 +247,7 @@ func (c *Client) savePlaybackCounts(dbc dbClient, tracks []PlayedTrack) error {
 // saveHourlyPlaybackCounts TODO: 算法需要增强
 // saveHourlyPlaybackCounts 存储每小时的收听量
 func (c *Client) saveHourlyPlaybackCounts(dbc dbClient) error {
-	lastSavedPlaybackTimeStr, err := dbc.GetMapStr("hourly-playback-counts", "last-saved-playback-time")
+	lastSavedPlaybackTimeStr, err := dbc.GetMapStr("updated-times", "last-saved-hourly-playback-time")
 	if err != nil {
 		return err
 	}
@@ -304,7 +304,7 @@ func (c *Client) saveHourlyPlaybackCounts(dbc dbClient) error {
 	}
 
 	if lastPlaybackTime != "" {
-		err = dbc.SetMap("hourly-playback-counts", "last-saved-playback-time", lastPlaybackTime)
+		err = dbc.SetMap("updated-times", "last-saved-hourly-playback-time", lastPlaybackTime)
 		if err != nil {
 			return err
 		}
@@ -334,9 +334,12 @@ func (c *Client) saveHourlyPlaybackCounts(dbc dbClient) error {
 
 	totalCount := 0
 	for _, count := range allCounts {
-		if i, err := strconv.Atoi(count); err == nil {
-			totalCount += i
+		i, err := strconv.Atoi(count)
+		if err != nil {
+			return err
 		}
+
+		totalCount += i
 	}
 
 	t, err := c.GetTotalPlaybackHistoryCount(dbc)
