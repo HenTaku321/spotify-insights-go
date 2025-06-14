@@ -21,7 +21,7 @@ import (
 
 func main() {
 	vPasswd := os.Getenv("VALKEY_PASSWD")
-	vc, err := valkey.NewClient("valkey.customdom.eu.org:6379", vPasswd, 0, true, &tls.Config{})
+	vc, err := valkey.NewClient("server:port", vPasswd, 0, true, &tls.Config{})
 	if err != nil {
 		if vPasswd == "" {
 			defer slog.Info("程序退出, 但与服务器的连接可能未被关闭") // 
