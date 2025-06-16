@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 	"time"
 
@@ -103,6 +104,9 @@ func (c *Client) saveRecentlyPlayedTracks(dbc dbClient) error {
 
 		err = c.savePlaybackRangeOnADay(dbc, t, count)
 		if err != nil {
+			if errors.Is(err, errDailyPlaybackRangesNotMatch) {
+				break
+			}
 			return err
 		}
 	}
