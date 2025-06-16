@@ -2,10 +2,13 @@ package spotify
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strconv"
 	"time"
 )
+
+var errDailyPlaybackRangesNotMatch = errors.New("")
 
 type PlaybackRange struct {
 	Start int `json:"start"`
@@ -60,7 +63,7 @@ func (c *Client) savePlaybackRangeOnADay(dbc dbClient, date time.Time, count int
 		rangeToday.End += count
 	}
 
-	slog.Debug("每日播放量保存成功", "日期", dateDateOnly, "新增", count, "总共", rangeToday.End-rangeToday.Start)
+	slog.Debug("每日播放量保存成功", "日期", dateDateOnly, "新增", count, "总共", rangeToday.End-rangeToday.Start+1)
 
 	j, err := json.Marshal(rangeToday)
 	if err != nil {
@@ -157,6 +160,8 @@ func (c *Client) savePlaybackRangeOnADay(dbc dbClient, date time.Time, count int
 				return err
 			}
 		}
+
+		return errDailyPlaybackRangesNotMatch
 	}
 
 	return nil
